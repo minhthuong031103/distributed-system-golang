@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: consul-config-a
+data:
+  consul-config.json: |
+    {
+      "service": {
+        "name": "service-a",
+        "tags": ["urlprefix-/service-a"],
+        "port": 8080
+      }
+    }
