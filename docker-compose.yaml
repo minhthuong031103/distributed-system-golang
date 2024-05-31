@@ -1,0 +1,54 @@
+version: '3.7'
+
+services:
+  consul:
+    image: hashicorp/consul
+    ports:
+      - '8500:8500'
+      - '8600:8600/udp'
+    command: 'consul agent -dev -client=0.0.0.0'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8500/v1/status/leader']
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  service-a:
+    build:
+      context: ./service-a
+      dockerfile: Dockerfile
+    environment:
+      - CONSUL_HTTP_ADDR=consul:8500
+    depends_on:
+      consul:
+        condition: service_healthy
+    ports:
+      - '8081:8080'
+
+  service-b:
+    build:
+      context: ./service-b
+      dockerfile: Dockerfile
+    environment:
+      - CONSUL_HTTP_ADDR=consul:8500
+    depends_on:
+      consul:
+        condition: service_healthy
+    ports:
+      - '8082:8080'
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    environment:
+      - CONSUL_HTTP_ADDR=consul:8500
+    depends_on:
+      consul:
+        condition: service_healthy
+      service-a:
+        condition: service_started
+      service-b:
+        condition: service_started
+    ports:
+      - '8080:8080'

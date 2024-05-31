@@ -1,0 +1,30 @@
+# service-a-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-a
+spec:
+  replicas: 3 # Number of instances to run
+  selector:
+    matchLabels:
+      app: service-a
+  template:
+    metadata:
+      labels:
+        app: service-a
+    spec:
+      containers:
+        - name: service-a
+          image: service-a-1:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8082
+          env:
+            - name: CONSUL_HTTP_ADDR
+              value: "http://consul-server.default.svc.cluster.local:8500"
+            - name: SERVICE_PORT
+              value: "8082"
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP

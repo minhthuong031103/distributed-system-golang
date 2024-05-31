@@ -33,4 +33,6 @@ kubectl logs <pod-name>
 kubectl get svc
 kubectl get ingress
 kubectl describe deployment api-gateway
-          
+
+          minikube service api-gateway --url  
+kubectl scale deployment service-a --replicas=6

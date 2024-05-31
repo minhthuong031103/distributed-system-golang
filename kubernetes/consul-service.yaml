@@ -1,0 +1,14 @@
+# consul-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: consul
+spec:
+  ports:
+    - port: 8500
+      name: http
+    - port: 8600
+      name: dns
+      protocol: UDP
+  selector:
+    app: consul

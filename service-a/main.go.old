@@ -1,0 +1,68 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"sync"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/hashicorp/consul/api"
+)
+
+func registerServiceWithConsul() {
+	config := api.DefaultConfig()
+	config.Address = os.Getenv("CONSUL_HTTP_ADDR")
+	client, err := api.NewClient(config)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	registration := new(api.AgentServiceRegistration)
+	registration.ID = "service-a"
+	registration.Name = "service-a"
+	address := "localhost"
+	registration.Address = address
+	port := 8080
+	registration.Port = port
+	registration.Check = &api.AgentServiceCheck{
+		HTTP:     fmt.Sprintf("http://%s:%d/health", address, port),
+		Interval: "10s",
+	}
+
+	for i := 0; i < 5; i++ {
+		err = client.Agent().ServiceRegister(registration)
+		if err == nil {
+			break
+		}
+		log.Printf("Failed to register service with Consul. Retrying in 5 seconds... (%d/5)\n", i+1)
+		time.Sleep(5 * time.Second)
+	}
+	if err != nil {
+		log.Fatal("Could not register service with Consul: ", err)
+	}
+}
+
+func main() {
+	wg := new(sync.WaitGroup)
+	wg.Add(1)
+
+	go func() {
+		registerServiceWithConsul()
+		wg.Done()
+	}()
+
+	wg.Wait()
+
+	router := gin.Default()
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
+	})
+	router.GET("/some-endpoint", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "Hello from Service A"})
+	})
+
+	router.Run(":8080")
+}

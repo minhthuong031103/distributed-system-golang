@@ -2,80 +2,84 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
+	"net/http/httputil"
+	"net/url"
 	"sync/atomic"
 
+	"github.com/gin-gonic/gin"
 	"github.com/hashicorp/consul/api"
 )
 
-type Service struct {
-	Name  string
-	Index uint32
+type Gateway struct {
+	consulClient *api.Client
+	serviceIndex map[string]*uint32
 }
 
-var (
-	services = map[string]*Service{
-		"service-a": &Service{Name: "service-a"},
-		"service-b": &Service{Name: "service-b"},
-	}
-)
+func NewGateway() *Gateway {
+	consulConfig := api.DefaultConfig()
 
-func getServiceAddress(serviceName string) (string, error) {
-	client, err := api.NewClient(api.DefaultConfig())
+	// consulConfig.Address = os.Getenv("CONSUL_HTTP_ADDR")
+	consulConfig.Address = "http://consul-server.default.svc.cluster.local:8500"
+	consulClient, err := api.NewClient(consulConfig)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return &Gateway{
+		consulClient: consulClient,
+		serviceIndex: make(map[string]*uint32),
+	}
+}
+
+func (g *Gateway) getNextServiceInstance(serviceName string) (string, error) {
+	services, _, err := g.consulClient.Health().Service(serviceName, "", true, nil)
+	fmt.Println(services)
 	if err != nil {
 		return "", err
 	}
 
-	svc, ok := services[serviceName]
-	if !ok {
-		return "", fmt.Errorf("service %s not found", serviceName)
+	if len(services) == 0 {
+		return "", fmt.Errorf("no healthy instances found for service: %s", serviceName)
 	}
 
-	serviceInstances, _, err := client.Health().Service(serviceName, "", true, nil)
-	if err != nil {
-		return "", err
+	if _, exists := g.serviceIndex[serviceName]; !exists {
+		g.serviceIndex[serviceName] = new(uint32)
 	}
 
-	if len(serviceInstances) == 0 {
-		return "", fmt.Errorf("no healthy instances of service %s found", serviceName)
-	}
+	idx := atomic.AddUint32(g.serviceIndex[serviceName], 1)
+	service := services[(idx-1)%uint32(len(services))]
 
-	instance := serviceInstances[atomic.AddUint32(&svc.Index, 1)%uint32(len(serviceInstances))].Service
-	return fmt.Sprintf("%s:%d", instance.Address, instance.Port), nil
+	return fmt.Sprintf("http://%s:%d", service.Service.Address, service.Service.Port), nil
 }
 
-func handler(w http.ResponseWriter, r *http.Request) {
-	serviceName := r.URL.Path[1:]
-	address, err := getServiceAddress(serviceName)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+func (g *Gateway) proxyHandler(serviceName string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		targetURL, err := g.getNextServiceInstance(serviceName)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 
-	resp, err := http.Get(fmt.Sprintf("http://%s", address))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer resp.Body.Close()
+		target, err := url.Parse(targetURL)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		proxy := httputil.NewSingleHostReverseProxy(target)
+		c.Request.URL.Path = c.Param("path")
+		proxy.ServeHTTP(c.Writer, c.Request)
 	}
-
-	w.Write(body)
 }
 
 func main() {
-	http.HandleFunc("/", handler)
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	gateway := NewGateway()
+	router := gin.Default()
+
+	router.GET("/service-a/*path", gateway.proxyHandler("service-a"))
+	router.GET("/service-b/*path", gateway.proxyHandler("service-b"))
+
+	router.Run(":8080")
 }

@@ -1,0 +1,26 @@
+# gateway-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: api-gateway-1:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: CONSUL_HTTP_ADDR
+              value: "http://consul-server.default.svc.cluster.local:8500"
+            - name: CONSUL_HTTP_ADDR1
+              value: "http://consul-server.default.svc.cluster.local:8500"

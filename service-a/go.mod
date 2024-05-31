@@ -1,9 +1,10 @@
-module api-gateway
+module service-a
 
 go 1.22.3
 
 require (
 	github.com/gin-gonic/gin v1.10.0
+	github.com/google/uuid v1.6.0
 	github.com/hashicorp/consul/api v1.29.1
 )
 

@@ -1,4 +1,4 @@
-module api-gateway
+module service-b
 
 go 1.22.3
 

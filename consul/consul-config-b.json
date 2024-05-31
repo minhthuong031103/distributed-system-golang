@@ -1,7 +1,0 @@
-{
-  "service": {
-    "name": "service-b",
-    "tags": ["urlprefix-/service-b"],
-    "port": 8080
-  }
-}
